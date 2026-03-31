@@ -14,6 +14,13 @@ class CanvasView(tk.Frame):
         # record drag position
         self.pan_start_x = 0
         self.pan_start_y = 0
+        self.can_mve_img = True
+
+        # rect
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+        self.drag_rect_id = None
+        self.rects = []
 
         self._build()
 
@@ -25,23 +32,74 @@ class CanvasView(tk.Frame):
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         canvas.bind("<MouseWheel>",self.on_mousewhell)
         canvas.bind("<Configure>", self.on_resize)
+
         canvas.bind('<ButtonPress-3>', self.on_pan_start) # right button pressed
         canvas.bind('<B3-Motion>', self.on_pan_move) # right button held + mouse moved
+        canvas.bind("<ButtonRelease-3>", self.on_pan_end)
 
+        canvas.bind("<ButtonPress-1>", self.on_drag_start)
+        canvas.bind("<B1-Motion>", self.on_drag_move)
+        canvas.bind("<ButtonRelease-1>", self.on_drag_end)
+
+    # move the img
     def on_pan_start(self, event):
-        self.pan_start_x = event.x
-        self.pan_start_y = event.y
+        mouse_x = event.x
+        mouse_y = event.y
+        x1, y1, x2, y2 = self.canvas.bbox(self.view_image_id)
+        is_over_img = (mouse_x >= x1 and mouse_x <= x2) and (mouse_y >= y1 and mouse_y <= y2)
+        if not is_over_img:
+            self.can_mve_img = False
+            return
+            
+        self.pan_start_x = mouse_x
+        self.pan_start_y = mouse_y
     
     def on_pan_move(self, event):
-        cur_x = event.x
-        cur_y = event.y
-        move_x = cur_x - self.pan_start_x
-        move_y = cur_y - self.pan_start_y
-        self.canvas.move(self.view_image_id, move_x, move_y)
+        if self.can_mve_img:
+            cur_x = event.x
+            cur_y = event.y
+            move_x = cur_x - self.pan_start_x
+            move_y = cur_y - self.pan_start_y
+            self.canvas.move(self.view_image_id, move_x, move_y)
 
-        self.pan_start_x = cur_x 
-        self.pan_start_y = cur_y
-    
+            self.pan_start_x = cur_x 
+            self.pan_start_y = cur_y
+
+    def on_pan_end(self, event):
+        self.can_mve_img = True
+
+    # drag the rect
+    def on_drag_start(self, event):
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+        self.drag_rect_id = self.canvas.create_rectangle(
+            self.drag_start_x, 
+            self.drag_start_y, 
+            self.drag_start_x, 
+            self.drag_start_y,
+            outline="red",
+            width="1",
+            fill=""
+        )
+
+    def on_drag_move(self, event):
+        img_x1, img_y1, img_x2, img_y2 = self.canvas.bbox(self.view_image_id)
+        # img_x1,
+        # img_y1,
+        # img_x2,
+        # img_y2,
+        print(img_x1)
+
+        self.canvas.coords(
+            self.drag_rect_id,
+            max(img_x1, self.drag_start_x),
+            max(img_y1, self.drag_start_y),
+            min(img_x2, event.x),
+            min(img_y2, event.y)
+        )
+    def on_drag_end(self, event):
+        self.rects.append(self.drag_rect_id)
+
     def on_resize(self, event):
         self.canvas.coords(self.view_image_id, event.width / 2, event.height / 2)
         
@@ -59,6 +117,19 @@ class CanvasView(tk.Frame):
         
         self.view_image = ImageTk.PhotoImage(resized)
         self.canvas.itemconfig(self.view_image_id, image=self.view_image)
+
+
+        for rect_id in self.rects:
+            o_x1,o_y1,o_x2,o_y2 = self.canvas.coords(rect_id)
+
+            self.canvas.coords(
+                rect_id,
+                o_x1 * self.zoom_num * -1,
+                o_y1 * self.zoom_num * -1,
+                o_x2 * self.zoom_num * 1,
+                o_y2 * self.zoom_num * 1,
+            )
+
         
     def load_image(self, image):
         self.origin_image = image
@@ -73,7 +144,9 @@ class CanvasView(tk.Frame):
 
         scale_w = cw * 0.9
         scale_h = ch * 0.9
-        self.zoom_num = min(scale_w / iw, scale_h / ih)
+        # self.zoom_num = min(scale_w / iw, scale_h / ih)
+        self.zoom_num = 1
+        
         rw, rh = (iw * self.zoom_num, ih * self.zoom_num)
         
         resized = self.origin_image.resize((int(rw), int(rh)), Image.Resampling.LANCZOS)
